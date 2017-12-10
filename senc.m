@@ -4,9 +4,6 @@ rand_inst = load('rand_inst.mat','rand_inst');
 rand_realizations = rand_inst.rand_inst;
 outbits = [];
 
-P = 0.00125;
-numbits = length(input_bits);
-
 for i = 1:50
  
     %break 4000 bits off of input bits
