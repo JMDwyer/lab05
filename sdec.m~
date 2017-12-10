@@ -1,0 +1,91 @@
+function [outbits] = sdec()
+
+numbits = 200000;
+n_plus = 120;
+P = 0.00125;
+
+%Get Waveform from wav
+y = audioread('rx.wav');
+
+%Get Untainted rand_realizations to compare against training
+rand_inst = load('rand_inst.mat','rand_inst');
+rand_realizations = rand_inst.rand_inst;
+
+enclen = 497811;
+%Detect delays, remove zeroes
+if length(y) > enclen
+        found = 0;
+        start_idx = 1;
+        while found == 0
+            if abs(y(start_idx)) > 0.0003
+                found = 1;
+            else
+                start_idx = start_idx + 1;
+            end
+        end
+        y = y(start_idx:start_idx + enclen);
+end
+    
+
+%Peel off training symbol
+training_cyclic = y(1:9671+1);
+%remove prepend 
+tr = training_cyclic(n_plus+1:end);
+
+tr = 1/sqrt(length(tr))*fft(tr);
+%Check this!!! LAMBDA might be wrong
+   
+%remove bottom half
+tr = tr(1:ceil(end/2));
+ 
+%prune off zeroes for high and low frequencies
+tr = tr(1:4112);
+tr = tr(112:end);
+ 
+%Drop DC component
+tr = tr(2:end);
+
+lambda = tr./rand_realizations;
+
+
+y = y(9671:end);
+
+for i =1:50
+    %Chunk into samples
+    sample_i = y(((i-1)*9671+1):i*(9671));
+    
+    %remove prepends
+    freq_data = sample_i(n_plus:end);
+    
+    %DFT
+    Y = (1/sqrt(length(sample_i)))*fft(freq_data);
+   
+    %remove bottom half
+    Y = Y(1:ceil(end/2));
+
+    %Drop DC component
+    Y = Y(2:end);
+    
+    %prune off zeroes for high and low frequencies
+    Y = Y(1:4112);
+    Y = Y(113:end);
+    
+    % Remove channel effects
+    Y = Y./lambda;
+
+    % Remove the random phase
+    Y = Y./rand_realizations;
+    
+    % Decode OOK
+    boundary = sqrt(P/2);
+    for j = (1:4000)
+                if((abs(Y(j)) >= boundary))
+                    outbits(4000*(i-1)+i+j) = 1;
+                else
+                    outbits(4000*(i-1)+i+j) = 1;
+                end
+     end
+end
+        
+end    
+

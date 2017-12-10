@@ -4,6 +4,9 @@ rand_inst = load('rand_inst.mat','rand_inst');
 rand_realizations = rand_inst.rand_inst;
 outbits = [];
 
+P = 0.00125;
+numbits = length(input_bits);
+
 for i = 1:50
  
     %break 4000 bits off of input bits
@@ -18,7 +21,7 @@ for i = 1:50
     padded_tone = [zeros(112,1);bit_tone;zeros(708,1)];
 
     %Flip bit_tone conjugate,prepend dc offset
-    freq_symbol = [0;padded_tone;fliplr(conj(padded_tone))];
+    freq_symbol = [0;padded_tone;flip(conj(padded_tone))];
 
     %useful variables
     L = length(freq_symbol);
@@ -36,11 +39,12 @@ end
 
 %Build the training symbol
 training_data = [zeros(112,1);rand_realizations;zeros(708,1)];
-training_symbol = [0;training_data;fliplr(conj(training_data))];
-training_Ifft = ifft(training_symbol);
+training_symbol = [0;training_data;flip(conj(training_data))];
 
-L = length(training_Ifft);
+L = length(training_symbol);
 n_plus = 120;
+
+training_Ifft = sqrt(L)*ifft(training_symbol);
 
 %Cyclic prepend
 training_cyclic = [training_Ifft((L-n_plus+1):end);training_Ifft];
