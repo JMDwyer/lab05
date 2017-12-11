@@ -1,12 +1,9 @@
-function [outbits, extracted] = qamdec(y, enclen, debugin, refbits)
-
-    M = 32;                     % Size of signal constellation
-    k = log2(M);                % Number of bits per symbol (QAM symbol)
-    n = 200000;                 % Number of bits to process
-    numSamplesPerSymbol = 1;    % Oversampling factor
-    
+function [outbits] = qamdec()
     % Number of total bits
-    numbits = n;
+    numbits = 200000;
+    
+    % Signal length
+    enclen = 100010;
     
     % Start freq index
     freq_lo = 12;
@@ -15,17 +12,13 @@ function [outbits, extracted] = qamdec(y, enclen, debugin, refbits)
     freq_hi = 4100;
     
     % Figure out how many bits we are sending per QAM symbol
-    load('QAMbits.mat');
+    %load('QAMbits.mat');
     
     % Find where the number of bits per QAM symbol changes. This is to
-    % vectorize the qammod code to speed up performance. 
-    qam_bits = qam_bits(freq_lo:freq_hi); % Truncate to used freq range
-    qam_bits(qam_bits > 6) = 6; % Clip the qam bits
-    qam_bits_idx = [0 find(diff(qam_bits)) length(qam_bits)];
-    qam_bps = qam_bits(qam_bits_idx(2:end));
-%     qam_bits = ones(1, freq_hi-freq_lo+1)*5;
-%     qam_bits_idx = ceil(linspace(0, length(qam_bits), 100));
-%     qam_bps = qam_bits(qam_bits_idx(2:end));
+    % vectorize the qammod code to speed up performance.
+    % Hardcoded for submission
+    qam_bits_idx = [0,189,589,2888,3789,4089];
+    qam_bps = [4,5,6,5,4];
     
     % Length of the encoded signal (hardcoded)
     %enclen = 150015;
@@ -38,15 +31,13 @@ function [outbits, extracted] = qamdec(y, enclen, debugin, refbits)
     TS = ceil(numbits/BPP/DPPTP);
     
     % The number of zeros to append in freq domain for a cut off of 18kHz
-    ignore = ceil(freq_hi/18000*(22050-18000));
     ignore = 4900 - freq_hi;
     
     % Number of samples to prepend
     prepend = 200;
     
     %Power constraint
-    P = 0.00125/((BPP + prepend/2)/(BPP+ignore + prepend/2));
-    P = 0.00125*22050/18000/0.67;
+    P = 0.00125/(freq_hi-freq_lo+1)*4900*0.99;
     
     % Calculate the number of samples per data packet
     SPP = (freq_hi + ignore)*2 + 1 + prepend;
@@ -58,15 +49,26 @@ function [outbits, extracted] = qamdec(y, enclen, debugin, refbits)
     rng(4670);
     randphase = rand([freq_hi-freq_lo+1, 1]);
     
-    %[afterchan, ~] = audioread('rx.wav');
-    %y = afterchan';
+    % Read in wav file
+    [afterchan, ~] = audioread('rx.wav');
+    y = afterchan;
+    
+    % Determine if we are on audio0 or audio1
+    if max(abs(y(200:5200))) < 0.0001
+        % audio0
+        shift_scale = 1.63;
+    else
+        % audio1
+        shift_scale = 1.1;
+    end
     
     % Find the starting index and truncate the initial zeros
+    threshold = max(abs(y(200:5200)))*7;
     if length(y) > enclen
         found = 0;
         start_idx = 1;
         while found == 0
-            if abs(y(start_idx)) > 0.0005
+            if abs(y(start_idx)) > threshold
                 found = 1;
             else
                 start_idx = start_idx + 1;
@@ -75,9 +77,8 @@ function [outbits, extracted] = qamdec(y, enclen, debugin, refbits)
         y = y(start_idx:start_idx + enclen);
     end
     
-    % Decode each symbol
+    % Decode packets
     dataBitsOutFull = [];
-    lambda_stack = []; % Lambda from the previous packet
     for t = 1:TS
         if t*(SPP*DPPTP + SPTP) > length(y)
             symsty = y(((t-1)*(SPP*DPPTP + SPTP)+1):end);
@@ -102,20 +103,8 @@ function [outbits, extracted] = qamdec(y, enclen, debugin, refbits)
         TR = TR(freq_lo:freq_hi);
         % Compute channel model
         lambda = smooth(TR./(sqrt(P)*exp(1i*randphase*2*pi)), 31);
-        % Add to lambda stack
-        lambda_stack = [lambda_stack lambda];
         
-        
-        %figure(1)
-        %plot(angle(lambda))
-%         subplot(1,2,1)
-%         plot(real(lambda))
-%         subplot(1,2,2)
-%         plot(imag(lambda))
-        
-        %figure(1)
-        %plot(angle(lambda))
-        %hold on
+        % Decode data packets
         for i = 1:DPPTP_adj
             % Extract one symbol
             symy = symsy(((i-1)*SPP+1):i*SPP);
@@ -153,11 +142,8 @@ function [outbits, extracted] = qamdec(y, enclen, debugin, refbits)
                 f_hi = qam_bits_idx(j + 1);
                 
                 % Calculate the normalization factor for QAM power limit
-                refconst = qammod(0:bitsPerSymbol-1,2^bitsPerSymbol);
+                refconst = qammod(0:2^bitsPerSymbol - 1,2^bitsPerSymbol);
                 nf = modnorm(refconst,'avpow',P);
-                
-                % Number of symbols we are processing this iteration
-                numsym_now = f_hi - f_lo + 1;
 
                 % Extract the symbols that we are converting
                 % Also scale by inverse the power
@@ -165,24 +151,13 @@ function [outbits, extracted] = qamdec(y, enclen, debugin, refbits)
                 %scatterplot(dataSymbolsOut,1,0,'g.')
                 
                 % QAM demod the symbols
-                dataIntegersOut = qamdemod(dataSymbolsOut,2^bitsPerSymbol, -1.63*j/180*pi);
-                %dataIntegersOut = qamdemod(dataSymbolsOut,2^bitsPerSymbol, -0.1152525*j/180*pi);
+                dataIntegersOut = qamdemod(dataSymbolsOut,2^bitsPerSymbol, -shift_scale*j/180*pi);
 
                 % Convert to bits
                 dataBitsOut = de2bi(dataIntegersOut,bitsPerSymbol);
                 
                 % The number of bits we are processing this iteration
                 numbits_now = (f_hi - f_lo + 1)*bitsPerSymbol;
-            
-                if (length(dataBitsOutFull) + length(dataBitsOutPacket) + length(dataBitsOut(:))) <= numbits
-                    correctBits = refbits(length(dataBitsOutFull)+length(dataBitsOutPacket)+1:...
-                        (length(dataBitsOutFull) + length(dataBitsOutPacket) + length(dataBitsOut(:))));
-                    allcorrect = all(dataBitsOut(:) == correctBits);
-                    if allcorrect == 0 && i == 1
-                        [j bitsPerSymbol sum(dataBitsOut(:) ~= correctBits)]
-                        %scatterplot(dataSymbolsOut,1,0,'g.')
-                    end
-                end
                 
                 % Append to current packet bits
                 dataBitsOutPacket = [dataBitsOutPacket; dataBitsOut(:)];
@@ -210,7 +185,7 @@ function [outbits, extracted] = qamdec(y, enclen, debugin, refbits)
                 f_hi = qam_bits_idx(j + 1);
 
                 % Calculate the normalization factor for QAM power limit
-                refconst = qammod(0:bitsPerSymbol-1,2^bitsPerSymbol);
+                refconst = qammod(0:2^bitsPerSymbol - 1,2^bitsPerSymbol);
                 nf = modnorm(refconst,'avpow',P);
 
                 % The number of bits we are processing this iteration
@@ -234,16 +209,9 @@ function [outbits, extracted] = qamdec(y, enclen, debugin, refbits)
                 currbit_idx = currbit_idx + numbits_now;
             end
             
-            % Update the channel estimate lambda
-            % Use averaging to reduce effects of any wrongly decoded bits
-            lambda_stack = [lambda_stack smooth(Y./sentSymbols, 31)];
-            lambda = mean(lambda_stack(:,size(lambda_stack,2):size(lambda_stack,2)),2);
-            %plot(angle(lambda))
-            
-            %scatterplot(Y(1001:2000),1,0,'g.');
+            lambda = smooth(Y./sentSymbols, 31);
         end
     end
-    extracted = 0;
     outbits = dataBitsOutFull;                 % Return data in column vector
     outbits = outbits(1:numbits);
 end

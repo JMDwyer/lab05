@@ -1,11 +1,6 @@
-function [x, qamout] = qamenc( bits )
+function [] = qamenc( bits )
     % Don't need special sync symbols at the beginning because commcloud is
     % high SNR. Can get the start of the signal by inspecting power
-    
-    M = 32;                     % Size of signal constellation
-    k = log2(M);                % Number of bits per symbol (QAM symbol)
-    n = length(bits);           % Number of bits to process
-    numSamplesPerSymbol = 1;    % Oversampling factor
     
     % Start freq index
     freq_lo = 12;
@@ -14,17 +9,13 @@ function [x, qamout] = qamenc( bits )
     freq_hi = 4100;
     
     % Figure out how many bits we are sending per QAM symbol
-    load('QAMbits.mat');
+    %load('QAMbits.mat');
     
     % Find where the number of bits per QAM symbol changes. This is to
-    % vectorize the qammod code to speed up performance. 
-    qam_bits = qam_bits(freq_lo:freq_hi); % Truncate to used freq range
-    qam_bits(qam_bits > 6) = 6; % Clip the qam bits
-    qam_bits_idx = [0 find(diff(qam_bits)) length(qam_bits)];
-    qam_bps = qam_bits(qam_bits_idx(2:end));
-%     qam_bits = ones(1, freq_hi-freq_lo+1)*5;
-%     qam_bits_idx = ceil(linspace(0, length(qam_bits), 100));
-%     qam_bps = qam_bits(qam_bits_idx(2:end));
+    % vectorize the qammod code to speed up performance.
+    % Hardcoded for submission
+    qam_bits_idx = [0,189,589,2888,3789,4089];
+    qam_bps = [4,5,6,5,4];
     
     % Number of bits per packet
     BPP = sum(diff(qam_bits_idx).*qam_bps);
@@ -32,8 +23,7 @@ function [x, qamout] = qamenc( bits )
     % Number of data packets per training packet
     DPPTP = 14;
     
-    % The number of zeros to append in freq domain for a cut off of 18kHz
-    ignore = ceil(freq_hi/18000*(22050-18000));
+    % The number of zeros to append in freq domain
     ignore = 4900 - freq_hi;
 
     % Number of samples to prepend in time domain
@@ -41,8 +31,7 @@ function [x, qamout] = qamenc( bits )
 
     % power constraint and number of bits in total
     numbits = length(bits);
-    P = 0.00125/((BPP + prepend/2)/(BPP+ignore + prepend/2));
-    P = 0.00125*22050/18000/0.67;
+    P = 0.00125/(freq_hi-freq_lo+1)*4900*0.99;
 
     % Number of packets to send and do any required padding
     packets = ceil(numbits/BPP);
@@ -67,6 +56,7 @@ function [x, qamout] = qamenc( bits )
     for i = 1:packets
         dataModG = zeros(freq_hi - freq_lo + 1, 1); % QAM output (freq domain)
         currbit_idx = 1; % Keep track of which bits we are converting
+        dataIntegersFull = [];
         for j = 1:length(qam_bps)
             % The number of bits we are placing in the current QAM symbol
             bitsPerSymbol = qam_bps(j);
@@ -76,7 +66,7 @@ function [x, qamout] = qamenc( bits )
             f_hi = qam_bits_idx(j + 1);
             
             % Calculate the normalization factor for QAM power limit
-            refconst = qammod(0:bitsPerSymbol-1,2^bitsPerSymbol);
+            refconst = qammod(0:2^bitsPerSymbol-1,2^bitsPerSymbol);
             nf = modnorm(refconst,'avpow',P);
             
             % The number of bits we are processing this iteration
@@ -97,25 +87,17 @@ function [x, qamout] = qamenc( bits )
             % Add to the QAM output vector
             dataModG(f_lo:f_hi) = qamSymbol;
             
-            % For debugging
-            if i == 3 && j==1
-                qamout = dataIntegers;
-            end
-            
             % Update current bit index
             currbit_idx = currbit_idx + numbits_now;
+            
+            dataIntegersFull = [dataIntegersFull; dataIntegers];
         end
-        
-        % For debugging
-%         if i == 3
-%             qamout = dataModG;
-%         end
 
         % Append 0s in the freq domain so we don't use freq above 18khz
         % Also apply random phases
         dataModG = [zeros(freq_lo-1,1); dataModG.*exp(1i*randphase*2*pi); zeros(ignore, 1)];
 
-        % Pad 0 for DC and append 0 if length of dataModG is even
+        % Pad 0 for DC
         dataModG_DC = [0; dataModG];
 
         % Append flipped conjugate so that time domain is purely real
@@ -139,6 +121,6 @@ function [x, qamout] = qamenc( bits )
         x = [x; dataModG_td_full];
     end
     %We need to create a wav file from x. Spec'd by project.
-    %audiowrite('tx.wav', x, 44100, 'BitsPerSample', 24);
+    audiowrite('tx.wav', x, 44100, 'BitsPerSample', 24);
 end
 

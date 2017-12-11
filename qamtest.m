@@ -21,7 +21,13 @@ dataSymbolsIn = bi2de(dataInMatrix);                 % Convert to integers
 % ylabel('Integer Value');
 
 refconst = qammod(0:M-1,M);
-dataModG = qammod(dataSymbolsIn, M, 0/180*pi);%.*exp(-1i*10/180*pi); % Gray coding, phase offset = 10 deg
+nf = modnorm(refconst,'avpow',0.00125);
+dataModG = nf*qammod(dataSymbolsIn, M, 8/180*pi);%.*exp(-1i*10/180*pi); % Gray coding, phase offset = 10 deg
+
+% Convert to time domaing
+dataModG_DC_full = [0; dataModG; flip(conj(dataModG))];
+dataModG_td = sqrt(length(dataModG_DC_full))*ifft(dataModG_DC_full);
+power = mean(dataModG_td.^2)
 
 EbNo = 20;
 snr = EbNo + 10*log10(k) - 10*log10(numSamplesPerSymbol);
@@ -31,15 +37,14 @@ receivedSignalG = awgn(dataModG,snr,'measured');
 sPlotFig = scatterplot(receivedSignalG,1,0,'g.');
 hold on
 scatterplot(dataModG,1,0,'k*',sPlotFig)
-scatterplot(refconst,1,0,'r*',sPlotFig)
+%scatterplot(refconst,1,0,'r*',sPlotFig)
 x = (0:15)'; 
 text(real(refconst)+0.1, imag(refconst), dec2bin(x), 'fontsize', 18)
 title('QAM-16, Gray Coded Mapping')
-axis([-4 4 -4 4])
 set(gca,'fontsize',18)
 set(gcf,'color','w');
 
-dataSymbolsOutG = qamdemod(receivedSignalG,M);
+dataSymbolsOutG = qamdemod(receivedSignalG/nf,M);
 
 [numErrorsG,berG] = biterr(dataSymbolsIn,dataSymbolsOutG);
 fprintf('\nThe Gray coding bit error rate = %5.2e, based on %d errors\n', ...

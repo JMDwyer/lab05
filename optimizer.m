@@ -20,9 +20,12 @@ end
 qam_bits_ideal = qam_bits;
 
 qam_bits(qam_bits > 6) = 6; % Clip the qam bits
-qam_bits(1:1054) = 5;
+qam_bits(1:600) = 5;
+qam_bits(2900:3145) = 5;
+qam_bits(1:200) = 4;
 
 freqs = linspace(0, 22050, 4900);
+%freqs = linspace(0, 4900, 4900);
 plot(freqs,log2(abs(irfft_interp)))
 hold on
 plot(freqs,qam_bits_ideal)
