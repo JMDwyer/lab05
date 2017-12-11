@@ -1,4 +1,13 @@
-function [] = senc(input_bits)
+function [outbits] = sdec()
+
+numbits = 200000;
+n_plus = 120;
+
+%Get Waveform from wav
+y = audioread('rx.wav');
+
+
+%Get Untainted rand_realizations to compare against training
 
 rand_realizations = [-0.0263300264244349 - 0.0285084146961657i;
 -0.0375236733492670 - 0.00989817853837323i;
@@ -4005,54 +4014,78 @@ rand_realizations = [-0.0263300264244349 - 0.0285084146961657i;
 % rand_inst = load('rand_inst.mat','rand_inst');
 % rand_realizations = rand_inst.rand_inst;
 
-outbits = [];
-
-for i = 1:50
- 
-    %break 4000 bits off of input bits
-    data_bits = input_bits((4000*(i-1)+1:4000*(i))); 
-    
-    %Multiply each element within the length 4000 vector of data bits by
-    %root2
-    data = sqrt(2).*data_bits;
-    bit_tone = data.*(rand_realizations);
-    
-    %Pad zeros onto bit tones
-    padded_tone = [zeros(112,1);bit_tone;zeros(708,1)];
-
-    %Flip bit_tone conjugate,prepend dc offset
-    freq_symbol = [0;padded_tone;flip(conj(padded_tone))];
-
-    %useful variables
-    L = length(freq_symbol);
-    n_plus = 120;
-    
-    %Take the IDFT
-    time_symbol = sqrt(L).*ifft(freq_symbol);
-
-    %add a cyclic prefix, multiply by sqrt L
-    cyclic_time_symbol = [time_symbol((L-n_plus+1):end);time_symbol]; 
-
-    outbits = [outbits;cyclic_time_symbol];
-
+enclen = 497811;
+%Detect delays, remove zeroes
+ if length(y) > enclen
+        found = 0;
+        start_idx = 1;
+        while found == 0
+            if abs(y(start_idx)) > 0.0003
+                found = 1;
+            else
+                start_idx = start_idx + 1;
+            end
+        end
+        y = y(start_idx:start_idx + enclen);
 end
 
-%Build the training symbol
-training_data = [zeros(112,1);rand_realizations;zeros(708,1)];
-training_symbol = [0;training_data;flip(conj(training_data))];
+%Peel off training symbol
+training_cyclic = y(1:9761);
+%remove prepend 
+tr_time = training_cyclic(n_plus+1:end);
 
-L = length(training_symbol);
-n_plus = 120;
+%Take fft
+tr_freq = 1/sqrt(length(tr_time))*fft(tr_time);
+   
+%remove bottom half
+tr_freq = tr_freq(1:ceil(end/2));
 
-training_Ifft = sqrt(L)*ifft(training_symbol);
+%Drop DC component
+tr_freq = tr_freq(2:end);
+ 
+%prune off zeroes for high and low frequencies
+tr_freq = tr_freq(113:4112);
 
-%Cyclic prepend
-training_cyclic = [training_Ifft((L-n_plus+1):end);training_Ifft];
+lambda = tr_freq./rand_realizations;
 
-%Add the training symbol to the remaining bits
-y = [training_cyclic; outbits];
+y = y(9762:end);
 
-%Write to waveform
-audiowrite('tx.wav', y, 44100, 'BitsPerSample', 24);
+outbits = zeros(numbits, 1);
+for i =1:50
+    %Chunk into samples
+    sample_i = y(((i-1)*9761+1):i*(9761));
+    
+    %remove prepends
+    freq_data = sample_i(n_plus+1:end);
+    
+    %DFT
+    Y = (1/sqrt(length(freq_data)))*fft(freq_data);
+   
+    %remove bottom half
+    Y = Y(1:ceil(end/2));
 
-return
+    %Drop DC component
+    Y = Y(2:end);
+    
+    %prune off zeroes for high and low frequencies
+    Y = Y(113:4112);
+    
+    % Remove channel effects
+    Y = Y./lambda;
+
+    % Remove the random phase
+    Y = Y./rand_realizations;
+    
+    % Decode OOK
+    boundary = sqrt(1/2);
+    for j = (1:4000)
+                if((abs(Y(j)) >= boundary))
+                    outbits(4000*(i-1)+j) = 1;
+                else
+                    outbits(4000*(i-1)+j) = 0;
+                end
+     end
+end
+        
+end    
+
