@@ -1,4 +1,4 @@
-M = 64;                     % Size of signal constellation
+M = 16;                     % Size of signal constellation
 k = log2(M);                % Number of bits per symbol
 n = 36000;                  % Number of bits to process
 numSamplesPerSymbol = 1;    % Oversampling factor
@@ -20,7 +20,8 @@ dataSymbolsIn = bi2de(dataInMatrix);                 % Convert to integers
 % xlabel('Symbol Index');
 % ylabel('Integer Value');
 
-dataModG = qammod(dataSymbolsIn,M); % Gray coding, phase offset = 0
+refconst = qammod(0:M-1,M);
+dataModG = qammod(dataSymbolsIn, M, 0/180*pi);%.*exp(-1i*10/180*pi); % Gray coding, phase offset = 10 deg
 
 EbNo = 20;
 snr = EbNo + 10*log10(k) - 10*log10(numSamplesPerSymbol);
@@ -30,6 +31,13 @@ receivedSignalG = awgn(dataModG,snr,'measured');
 sPlotFig = scatterplot(receivedSignalG,1,0,'g.');
 hold on
 scatterplot(dataModG,1,0,'k*',sPlotFig)
+scatterplot(refconst,1,0,'r*',sPlotFig)
+x = (0:15)'; 
+text(real(refconst)+0.1, imag(refconst), dec2bin(x), 'fontsize', 18)
+title('QAM-16, Gray Coded Mapping')
+axis([-4 4 -4 4])
+set(gca,'fontsize',18)
+set(gcf,'color','w');
 
 dataSymbolsOutG = qamdemod(receivedSignalG,M);
 

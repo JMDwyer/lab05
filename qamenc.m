@@ -11,7 +11,7 @@ function [x, qamout] = qamenc( bits )
     freq_lo = 12;
     
     % Stop freq index
-    freq_hi = 4000;
+    freq_hi = 4100;
     
     % Figure out how many bits we are sending per QAM symbol
     load('QAMbits.mat');
@@ -22,15 +22,19 @@ function [x, qamout] = qamenc( bits )
     qam_bits(qam_bits > 6) = 6; % Clip the qam bits
     qam_bits_idx = [0 find(diff(qam_bits)) length(qam_bits)];
     qam_bps = qam_bits(qam_bits_idx(2:end));
+%     qam_bits = ones(1, freq_hi-freq_lo+1)*5;
+%     qam_bits_idx = ceil(linspace(0, length(qam_bits), 100));
+%     qam_bps = qam_bits(qam_bits_idx(2:end));
     
     % Number of bits per packet
-    BPP = sum(qam_bits);
+    BPP = sum(diff(qam_bits_idx).*qam_bps);
 
     % Number of data packets per training packet
-    SPTP = 2;
+    DPPTP = 14;
     
     % The number of zeros to append in freq domain for a cut off of 18kHz
     ignore = ceil(freq_hi/18000*(22050-18000));
+    ignore = 4900 - freq_hi;
 
     % Number of samples to prepend in time domain
     prepend = 200;
@@ -38,7 +42,7 @@ function [x, qamout] = qamenc( bits )
     % power constraint and number of bits in total
     numbits = length(bits);
     P = 0.00125/((BPP + prepend/2)/(BPP+ignore + prepend/2));
-    P = 0.00125;
+    P = 0.00125*22050/18000/0.67;
 
     % Number of packets to send and do any required padding
     packets = ceil(numbits/BPP);
@@ -51,6 +55,7 @@ function [x, qamout] = qamenc( bits )
 
     % Create the training signal
     TR = [zeros(freq_lo-1,1); sqrt(P)*exp(1i*randphase*2*pi); zeros(ignore, 1)];
+    %TR = TR(2:2:end); % Half the size of the training symbol
     TR_DC = [0; TR];
     TR_full = [TR_DC; flip(conj(TR))];
     tr = sqrt(length(TR_full))*ifft(TR_full);
@@ -77,7 +82,6 @@ function [x, qamout] = qamenc( bits )
             % The number of bits we are processing this iteration
             numbits_now = (f_hi - f_lo + 1)*bitsPerSymbol;
             
-            [bitsPerSymbol ((i-1)*BPP + currbit_idx) ((i-1)*BPP + currbit_idx + numbits_now - 1)]
             % Extract the bits that we are converting
             dataSymbolBits = bits(((i-1)*BPP + currbit_idx):...
                 ((i-1)*BPP + currbit_idx + numbits_now - 1));
@@ -124,7 +128,7 @@ function [x, qamout] = qamenc( bits )
         dataModG_td_prep = [dataModG_td(end-prepend+1:end); dataModG_td];
 
         % Whether or not to throw in a training symbol
-        if mod(i-1, SPTP) == 0
+        if mod(i-1, DPPTP) == 0
             dataModG_td_full = [tr_prepend; dataModG_td_prep];
             TS = TS + 1;
         else
