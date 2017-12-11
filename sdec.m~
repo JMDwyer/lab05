@@ -2,7 +2,6 @@ function [outbits] = sdec()
 
 numbits = 200000;
 n_plus = 120;
-P = 0.00125;
 
 %Get Waveform from wav
 y = audioread('rx.wav');
@@ -13,7 +12,7 @@ rand_realizations = rand_inst.rand_inst;
 
 enclen = 497811;
 %Detect delays, remove zeroes
-if length(y) > enclen
+ if length(y) > enclen
         found = 0;
         start_idx = 1;
         while found == 0
@@ -25,40 +24,38 @@ if length(y) > enclen
         end
         y = y(start_idx:start_idx + enclen);
 end
-    
 
 %Peel off training symbol
-training_cyclic = y(1:9671+1);
+training_cyclic = y(1:9761);
 %remove prepend 
-tr = training_cyclic(n_plus+1:end);
+tr_time = training_cyclic(n_plus+1:end);
 
-tr = 1/sqrt(length(tr))*fft(tr);
-%Check this!!! LAMBDA might be wrong
+%Take fft
+tr_freq = 1/sqrt(length(tr_time))*fft(tr_time);
    
 %remove bottom half
-tr = tr(1:ceil(end/2));
+tr_freq = tr_freq(1:ceil(end/2));
+
+%Drop DC component
+tr_freq = tr_freq(2:end);
  
 %prune off zeroes for high and low frequencies
-tr = tr(1:4112);
-tr = tr(112:end);
- 
-%Drop DC component
-tr = tr(2:end);
+tr_freq = tr_freq(113:4112);
 
-lambda = tr./rand_realizations;
+lambda = tr_freq./rand_realizations;
 
+y = y(9762:end);
 
-y = y(9671:end);
-
+outbits = zeros(numbits, 1);
 for i =1:50
     %Chunk into samples
-    sample_i = y(((i-1)*9671+1):i*(9671));
+    sample_i = y(((i-1)*9761+1):i*(9761));
     
     %remove prepends
-    freq_data = sample_i(n_plus:end);
+    freq_data = sample_i(n_plus+1:end);
     
     %DFT
-    Y = (1/sqrt(length(sample_i)))*fft(freq_data);
+    Y = (1/sqrt(length(freq_data)))*fft(freq_data);
    
     %remove bottom half
     Y = Y(1:ceil(end/2));
@@ -67,8 +64,7 @@ for i =1:50
     Y = Y(2:end);
     
     %prune off zeroes for high and low frequencies
-    Y = Y(1:4112);
-    Y = Y(113:end);
+    Y = Y(113:4112);
     
     % Remove channel effects
     Y = Y./lambda;
@@ -77,12 +73,12 @@ for i =1:50
     Y = Y./rand_realizations;
     
     % Decode OOK
-    boundary = sqrt(P/2);
+    boundary = sqrt(1/2);
     for j = (1:4000)
                 if((abs(Y(j)) >= boundary))
-                    outbits(4000*(i-1)+i+j) = 1;
+                    outbits(4000*(i-1)+j) = 1;
                 else
-                    outbits(4000*(i-1)+i+j) = 1;
+                    outbits(4000*(i-1)+j) = 0;
                 end
      end
 end
